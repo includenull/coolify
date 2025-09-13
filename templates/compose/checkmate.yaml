@@ -1,47 +1,52 @@
 # documentation: https://bluewavelabs.gitbook.io/checkmate
-# slogan: An open source server monitoring application
+# slogan: Checkmate is an open-source, self-hosted tool designed to track and monitor server hardware, uptime, response times, and incidents in real-time with beautiful visualizations.
 # category: monitoring
 # tags: monitoring,server,uptime,healthcheck
 # logo: svgs/checkmate.png
-# port: 80
+# port: 52345
 
 services:
-  client:
-    image: bluewaveuptime/uptime_client:latest
+  checkmate:
+    image: "ghcr.io/bluewave-labs/checkmate-backend-mono:latest"
+    restart: always
     environment:
-      - SERVICE_URL_CHECKMATE_80
-      - UPTIME_APP_API_BASE_URL=${SERVICE_URL_CHECKMATESERVER_5000}/api/v1
+      - SERVICE_FQDN_CHECKMATE_52345
+      - "UPTIME_APP_CLIENT_HOST=${SERVICE_FQDN_CHECKMATE}"
+      - "UPTIME_APP_API_BASE_URL=${SERVICE_URL_CHECKMATE}/api/v1"
+      - "DB_CONNECTION_STRING=mongodb://mongodb:27017/uptime_db"
+      - "CLIENT_HOST=${SERVICE_FQDN_CHECKMATE}"
+      - "JWT_SECRET=${SERVICE_PASSWORD_CHECKMATE}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
-      - server
-  server:
-    image: bluewaveuptime/uptime_server:latest
-    environment:
-      - SERVICE_URL_CHECKMATESERVER_5000
-      - JWT_SECRET=${SERVICE_PASSWORD_64_JWT}
-      - REFRESH_TOKEN_SECRET=${SERVICE_PASSWORD_64_REFRESH}
-      - SYSTEM_EMAIL_ADDRESS=${SYSTEM_EMAIL_ADDRESS:-test@example.com}
-      - SYSTEM_EMAIL_PASSWORD=${SERVICE_PASSWORD_64_EMAIL}
-      - SYSTEM_EMAIL_HOST=${SYSTEM_EMAIL_HOST}
-      - SYSTEM_EMAIL_PORT=${SYSTEM_EMAIL_PORT}
-      - PAGESPEED_API_KEY=${PAGESPEED_API_KEY}
-      - DB_CONNECTION_STRING=${DB_CONNECTION_STRING:-mongodb://mongodb:27017/uptime_db}
-      - REDIS_HOST=${REDIS_HOST:-redis}
-      - REDIS_PORT=${REDIS_PORT:-6379}
-      - DB_TYPE=${DB_TYPE:-MongoDB}
-      - TOKEN_TTL=${TOKEN_TTL:-99d}
-      - REFRESH_TOKEN_TTL=${REFRESH_TOKEN_TTL:-99d}
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-    depends_on:
-      - redis
       - mongodb
-  redis:
-    image: bluewaveuptime/uptime_redis:latest
-    volumes:
-      - redis:/data
   mongodb:
-    image: bluewaveuptime/uptime_database_mongo:latest
+    image: "ghcr.io/bluewave-labs/checkmate-mongo:latest"
+    restart: always
+    command:
+      - mongod
+      - "--quiet"
+      - "--bind_ip_all"
     volumes:
-      - mongodb:/data/db
-    command: ["mongod", "--quiet"]
-
+      - "checkmate_mongo_data:/data/db"
+    healthcheck:
+      test:
+        - CMD
+        - mongosh
+        - "--eval"
+        - "db.adminCommand('ping')"
+        - "--quiet"
+      interval: 5s
+      timeout: 30s
+      start_period: 0s
+      start_interval: 1s
+      retries: 30
+  capture:
+    image: ghcr.io/bluewave-labs/capture:latest
+    restart: unless-stopped
+    environment:
+      - "API_SECRET=${SERVICE_BASE64_64_CAPTURE}"
+    volumes:
+      - /etc/os-release:/etc/os-release:ro
+volumes:
+  checkmate_mongo_data: null
